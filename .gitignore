@@ -1,6 +1,7 @@
 # Repo Specific
 creds.py
 routers.csv
+public_subnets.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
