@@ -2,6 +2,7 @@
 creds.py
 routers.csv
 public_subnets.csv
+main_paramiko_log.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
