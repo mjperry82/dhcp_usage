@@ -18,7 +18,7 @@ def connect(host, username, password, port=22):
     client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
     
     try:
-        client.connect(host, port, username, password,look_for_keys=False,allow_agent=False)
+        client.connect(host, port, username, password,timeout=10,look_for_keys=False,allow_agent=False)
     except Exception as ex:
         print(f"general exception on host {host}")
         print(ex)
