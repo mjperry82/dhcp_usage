@@ -53,19 +53,22 @@ def get_dhcp_leases(ssh, dhcp_server, router_name):
     leases = parse_leases(output)
 
     networks = []
+    temp_networks = []
 
     for subnet in dhcp_networks:
+        if subnet not in temp_networks:
+            temp_networks.append(subnet)
 
-        networks.append({
-            'router': router_name,
-            'server': dhcp_server['name'],            
-            'network': subnet,
-            'ip available': subnet.num_addresses - 3,
-            'total leases': 0,
-            'dynamic': 0,
-            'reserved': 0,
-            'is public': subnet.is_global
-        })
+            networks.append({
+                'router': router_name,
+                'server': dhcp_server['name'],            
+                'network': subnet,
+                'ip available': subnet.num_addresses - 3,
+                'total leases': 0,
+                'dynamic': 0,
+                'reserved': 0,
+                'is public': subnet.is_global
+            })
     
     if leases != None:
         for lease in leases:
