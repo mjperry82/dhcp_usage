@@ -28,7 +28,6 @@ output_file = current_dir / 'output.csv'
 dhcp_subnets = []
 
 def get_router_info(router):
-    print(f"router: {router}")
     ip = router[1]
     ssh = tik_ssh.connect(str(ip), creds.username, creds.password)
     
@@ -45,7 +44,7 @@ def get_router_info(router):
 
 def get_dhcp_leases(ssh, dhcp_server, router_name):
     command = f":put [ /ip address print as-value where \
-        interface={dhcp_server['interface']} ]"
+        interface={dhcp_server['interface']} and disabled=no ]"
     output = tik_ssh.command(ssh, command)
     dhcp_networks = parse_interface_networks(output)
     
