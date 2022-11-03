@@ -64,8 +64,7 @@ def get_dhcp_leases(ssh, dhcp_server, router_name):
             'total leases': 0,
             'dynamic': 0,
             'reserved': 0,
-            'public': 0,
-            'private': 0
+            'is public': subnet.is_global
         })
     
     if leases != None:
@@ -74,10 +73,6 @@ def get_dhcp_leases(ssh, dhcp_server, router_name):
                 if networks[i]['network'].overlaps(lease):
                     networks[i]['dynamic'] += 1
                     networks[i]['total leases'] += 1
-                    if lease.is_global:
-                        networks[i]['public'] += 1
-                    else:
-                        networks[i]['private'] += 1
     
     command = f":put [ /ip dhcp-server lease print as-value where \
        server={dhcp_server['name']} and dynamic=no and status=bound ]"
@@ -90,10 +85,6 @@ def get_dhcp_leases(ssh, dhcp_server, router_name):
                 if networks[i]['network'].overlaps(lease):
                     networks[i]['reserved'] += 1
                     networks[i]['total leases'] += 1
-                    if lease.is_global:
-                        networks[i]['public'] += 1
-                    else:
-                        networks[i]['private'] += 1
     
     for network in networks:
         dhcp_subnets.append(network)
