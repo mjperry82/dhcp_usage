@@ -38,7 +38,10 @@ def get_router_info(router):
         dhcp_servers = get_dhcp_servers(ssh)
         
         for dhcp_server in dhcp_servers:
-            dhcp_networks = get_dhcp_leases(ssh, dhcp_server, router_name)
+            print("dhcp servers")
+            print(f"interface: {dhcp_server['name'][:7].lower()}")
+            if dhcp_server['name'][:7].lower() == 'hotspot':
+                dhcp_networks = get_dhcp_leases(ssh, dhcp_server, router_name)
             
     return 1
 
@@ -126,7 +129,8 @@ def load_routers(path):
     with open(path) as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
-            routers.append([row[0], row[1]])
+            if row[0] != 'id':
+                routers.append([row[1], ip_interface(row[2]).ip])
     
     return routers
 
