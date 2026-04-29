@@ -6,15 +6,12 @@
 # assigned to DHCP interfaces and the % of those subnets with active 
 # leases
 
-import paramiko
-import re
 import csv
 import tik_ssh
 import creds
-import threading
 import concurrent.futures
 from pathlib import Path
-from ipaddress import ip_address,ip_interface,ip_network
+from ipaddress import ip_interface, ip_network
 
 # List to hold router names and Number of private leases
 lease_list = []
@@ -27,41 +24,43 @@ output_file = current_dir / 'output.csv'
 # Array to store DHCP subnets
 dhcp_subnets = []
 
+
 def get_router_info(router):
     ip = router[1]
     ssh = tik_ssh.connect(str(ip), creds.username, creds.password)
-    
-    if ssh == None:
+
+    if ssh is None:
         return None
     else:
         router_name = get_router_name(ssh)
         dhcp_servers = get_dhcp_servers(ssh)
-        
+
         for dhcp_server in dhcp_servers:
-            dhcp_networks = get_dhcp_leases(ssh, dhcp_server, router_name)
-            
+            if dhcp_server['name'][:7].lower() == 'hotspot':
+                dhcp_networks = get_dhcp_leases(ssh, dhcp_server, router_name)
+
     return 1
+
 
 def get_dhcp_leases(ssh, dhcp_server, router_name):
     command = f":put [ /ip address print as-value where \
         interface={dhcp_server['interface']} and disabled=no ]"
     output = tik_ssh.command(ssh, command)
     dhcp_networks = parse_interface_networks(output)
-    
-    command = f":put [ /ip dhcp-server lease print as-value where dynamic=yes ]"
-    output = tik_ssh.command(ssh, command)
-    leases = parse_leases(output)
 
-    networks = []
+    router = {
+        'router': router_name,
+        'server': dhcp_server['name'],
+        'networks': []
+    }
+
     temp_networks = []
 
     for subnet in dhcp_networks:
         if subnet not in temp_networks:
             temp_networks.append(subnet)
 
-            networks.append({
-                'router': router_name,
-                'server': dhcp_server['name'],            
+            router['networks'].append({          
                 'network': subnet,
                 'ip available': subnet.num_addresses - 3,
                 'total leases': 0,
@@ -69,77 +68,88 @@ def get_dhcp_leases(ssh, dhcp_server, router_name):
                 'reserved': 0,
                 'is public': subnet.is_global
             })
-    
-    if leases != None:
+
+    command = ":put [ /ip dhcp-server lease print as-value where dynamic=yes ]"
+    output = tik_ssh.command(ssh, command)
+    leases = parse_leases(output)    
+
+    if leases is not None:
         for lease in leases:
-            for i in range(len(networks)):
-                if networks[i]['network'].overlaps(lease):
-                    networks[i]['dynamic'] += 1
-                    networks[i]['total leases'] += 1
-    
+            for i in range(len(router['networks'])):
+                if router['networks'][i]['network'].overlaps(lease):
+                    router['networks'][i]['dynamic'] += 1
+                    router['networks'][i]['total leases'] += 1
+
     command = f":put [ /ip dhcp-server lease print as-value where \
        server={dhcp_server['name']} and dynamic=no and status=bound ]"
     output = tik_ssh.command(ssh, command)
     leases = parse_leases(output)
 
-    if leases != None:
+    if leases is not None:
         for lease in leases:
-            for i in range(len(networks)):
-                if networks[i]['network'].overlaps(lease):
-                    networks[i]['reserved'] += 1
-                    networks[i]['total leases'] += 1
-    
-    for network in networks:
-        dhcp_subnets.append(network)
+            for i in range(len(router['networks'])):
+                if router['networks'][i]['network'].overlaps(lease):
+                    router['networks'][i]['reserved'] += 1
+                    router['networks'][i]['total leases'] += 1
+
+    dhcp_subnets.append(router)
+
 
 def get_dhcp_servers(ssh):
     dhcp_servers = []
-    
+
     command = "/ip dhcp-server print count-only"
     output = tik_ssh.command(ssh, command)
     server_count = int(output[0])
-    
+
     if server_count > 0:
         for i in range(server_count):
             command = f":put [ /ip dhcp-server get number={i} name ]"
             output = tik_ssh.command(ssh, command)
             server_name = output[0]
-            
+
             command = f":put [ /ip dhcp-server get number={i} interface ]"
             output = tik_ssh.command(ssh, command)
             server_interface = output[0]
-            
-            dhcp_servers.append({'name': server_name, 'interface': server_interface})
+
+            dhcp_servers.append({
+                'name': server_name, 
+                'interface': server_interface
+                })
+
     return dhcp_servers
+
 
 def get_router_name(ssh):
     command = "/system identity print"
     output = tik_ssh.command(ssh, command)
     router_name = output[0].split(': ')[1]
-    
+
     return router_name
-        
+
+
 def load_routers(path):
-    #list to hold router names and IP
+    # list to hold router names and IP
     routers = []
-    
+
     with open(path) as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
-            routers.append([row[0], row[1]])
-    
+            if row[0] != 'id':
+                routers.append([row[1], ip_interface(row[2]).ip])
+
     return routers
 
-def output_csv(output_file):
-    with open(output_file, 'w') as csvfile:
-        headers = dhcp_subnets[0].keys()
 
-        writer = csv.DictWriter(csvfile,headers)
+def output_csv(output_file, router_output):
+    with open(output_file, 'w') as csvfile:
+        headers = router_output[0].keys()
+
+        writer = csv.DictWriter(csvfile, headers)
 
         writer.writeheader()
-        writer.writerows(dhcp_subnets)
-        
-        
+        writer.writerows(router_output)
+
 
 def parse_interface_networks(output):
     lines = output[0].split('.id=')
@@ -147,12 +157,13 @@ def parse_interface_networks(output):
     for line in lines:
         if line != '':            
             for value in line.split(';'):
-                if value[:8] =='address=':
+                if value[:8] == 'address=':
                     networks.append(ip_interface(value[8:]).network)
     if len(networks) > 0:
         return networks
     else:
         return None
+
 
 def parse_leases(output):
 
@@ -169,17 +180,53 @@ def parse_leases(output):
     else:
         return leases
 
+
 def poplulate_dhcp(routers):
     with concurrent.futures.ThreadPoolExecutor(max_workers=40) as executor:
-        executor.map(get_router_info,routers)
+        executor.map(get_router_info, routers)
+
+
+def organize_routers(dhcp_subnets):
+    router_output = []
+    for entry in dhcp_subnets:
+        router = {
+            'router': entry['router'],
+            'server': entry['server'],
+            'subnets': [],
+            'available_private': 0,
+            'used_private': 0,
+            'available_public': 0,
+            'used_public': 0,
+            'networks': entry['networks']
+        }
+
+        for network in entry['networks']:
+            router['subnets'].append(network['network'])
+            if network['is public']:
+                router['available_public'] += network['ip available']
+                router['used_public'] += network['total leases']
+            else:
+                router['available_private'] += network['ip available']
+                router['used_private'] += network['total leases']
+        
+        router_output.append(router)
+        
+    return router_output
+
 
 def main():
     routers = load_routers(router_file)
-    
+
     poplulate_dhcp(routers)
 
+    print(len(dhcp_subnets))
+
+    router_output = organize_routers(dhcp_subnets)
+
     if len(dhcp_subnets) > 0:
-        output_csv(output_file)
+        router_output = organize_routers(dhcp_subnets)
+        output_csv(output_file, router_output)
+
 
 if __name__ == "__main__":
     main()
